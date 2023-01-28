@@ -5,6 +5,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <vector>
+#include <math.h> 
 
 #define MN1 std::byte{ 31 }
 #define MN2 std::byte{ 139 }
@@ -12,12 +13,14 @@
 
 class Decompressor {
 
-	std::vector<std::byte> current_chunk;
+	std::vector<std::byte> current_chunk, chunk_to_write;
 	std::ifstream stream_read;
 	std::ofstream stream_write;
 	bool curr_is_last { 0 };
-	std::byte first_leftover, second_leftover;
-	short first_leftover_size, second_leftover_size;
+	std::byte first_leftover { std::byte { 0 } }, second_leftover { std::byte { 0 } };
+	short first_leftover_size{ 0 }, second_leftover_size { 0 };
+
+	void (Decompressor::*btype_function)();
 
 	enum BlockType {
 		Uncompressed_bt0,
@@ -29,7 +32,10 @@ class Decompressor {
 
 // ----------------- private methods ----------------
 
-	void readInputStream(const unsigned long chunk_size) {
+	void readInputStream(std::vector<std::byte>& vect_to_read, const unsigned long chunk_size) {
+		
+		vect_to_read.clear();
+
 		unsigned long i = 0;
 	
 		while (i < chunk_size) {
@@ -37,7 +43,7 @@ class Decompressor {
 				throw std::invalid_argument("Chunk size requested exceeds the length of the file");
 			}
 
-			current_chunk.push_back((std::byte) stream_read.get());
+			vect_to_read.push_back((std::byte) stream_read.get());
 			i++;
 			if (i == chunk_size){
 				break;
@@ -60,6 +66,28 @@ class Decompressor {
 	}
 
 
+	void decodeZeroType() {
+		first_leftover_size = 0;
+		first_leftover = std::byte{ 0 };
+
+		int datalen { 0 };
+
+		readInputStream(current_chunk, 4);
+
+		for (short i = 0; i < 2; i++) {
+			datalen += std::to_integer<int>(current_chunk[i]) * pow(256, i);
+		}
+
+		readInputStream(chunk_to_write, datalen);
+	}
+
+	void decodeFirstType() {
+	}
+
+	void decodeSecondType() {
+	}
+
+
 	public:
 
 // ----------------- public methods ----------------
@@ -74,7 +102,7 @@ class Decompressor {
 			}
 
 			try {
-				readInputStream(10);
+				readInputStream(current_chunk, 10);
 				current_chunk.shrink_to_fit();
 
 				proofMagicNumbers();
@@ -85,24 +113,47 @@ class Decompressor {
 			}
 		}
 
+
 		void readBlocktype() {	
-			readInputStream(1);
+			readInputStream(current_chunk, 1);
 			std::byte chunk { current_chunk[0] };
 			
 			curr_is_last = (bool) (chunk & std::byte(0x01));
 			chunk >>= 1;
-			first_leftover_size = 7;
 
-			short btype = std::to_integer<short>(chunk & std::byte(0x03));
+			std::byte btype = chunk & std::byte(0x03);
 
 			switch (btype) {
-				case 0:
-					current_blt = BlockType::Uncompressed_bt0;
-				case 1:
-					current_blt = BlockType::Static_Huffman_bt1;
-				case 2:
-					current_blt = BlockType::Dynamic_Huffman_bt2;
+				case std::byte { 0x00 }:
+					current_blt = Uncompressed_bt0;
+					btype_function = &Decompressor::decodeZeroType;
+					break;
+				case std::byte { 0x01 }:
+					current_blt = Static_Huffman_bt1;
+					btype_function = &Decompressor::decodeFirstType;
+					break;
+				case std::byte { 0x02 }:
+					current_blt = Dynamic_Huffman_bt2;
+					btype_function = &Decompressor::decodeSecondType;
+					break;
 			}
+
+			first_leftover_size = 5;
+			chunk >>= 2;
+			first_leftover = chunk;
+		}
+
+
+		bool decodeBlock() {
+			(this->*btype_function)();
+
+			writeOutputStream(chunk_to_write);
+
+			if (curr_is_last) {
+				return 1;
+			}
+
+			return 0;
 		}
 
 
@@ -132,6 +183,7 @@ int main(int argc, char** argv) {
 	}
 	
 	decompressor->readBlocktype();
+	decompressor->decodeBlock();
 
 	return 0;
 }
