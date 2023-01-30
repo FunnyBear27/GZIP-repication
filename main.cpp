@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <functional>
+#include <unordered_map>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -7,8 +9,49 @@
 #include <vector>
 #include <math.h> 
 
+
 #define MN1 std::byte{ 31 }
 #define MN2 std::byte{ 139 }
+
+struct TwoBytes {
+	std::byte byte_zero;
+	std::byte byte_one;
+
+	std::byte& operator[](bool pos) {
+		if (!pos) {
+			return byte_zero;
+		}
+
+		else {
+			return byte_one;
+		}
+	}
+
+	bool operator==(const TwoBytes &other) const {
+		return ( this->byte_zero == other.byte_zero ) & ( this->byte_one == other.byte_one );
+	}
+};
+
+template<> // How does it work?
+struct std::hash<TwoBytes> {
+	std::size_t operator() ( const TwoBytes& o) const {
+		std::size_t h1 = std::hash<std::byte>{}(o.byte_one);
+		std::size_t h2 = std::hash<std::byte>{}(o.byte_one);
+		return h1 ^ (h2 << 1);
+	}
+};
+
+
+//struct Tree { 
+	//TwoBytes value;
+	//Tree *left_node, *right_node;
+	//std::vector<TwoBytes> code_lengths_vector;
+
+	//Tree (std::vector<TwoBytes> lengths_vector) {
+		
+	//}
+//};
+
 
 
 class Decompressor {
@@ -19,6 +62,7 @@ class Decompressor {
 	bool curr_is_last { 0 };
 	std::byte first_leftover { std::byte { 0 } }, second_leftover { std::byte { 0 } };
 	short first_leftover_size{ 0 }, second_leftover_size { 0 };
+	std::unordered_map<TwoBytes, TwoBytes> first_type_llc;
 
 	void (Decompressor::*btype_function)();
 
@@ -59,6 +103,31 @@ class Decompressor {
 	}
 
 
+	void generate_static_huffman() { // RFC 1951 DEFLATE specs - 3.2.6
+		TwoBytes value;
+		value[0] = std::byte { 0 };
+		value[1] = std::byte{ 0 };
+
+		TwoBytes current_code;
+		current_code[0] = std::byte { 0 };
+		current_code[1] = std::byte { 0x30 };
+
+		TwoBytes max_val;
+		max_val[0] = std::byte { 0 };
+		max_val[1] = std::byte { 0x8f + 1 } ;
+
+		while (value[1] != max_val[1]) {
+			first_type_llc[current_code] = value;
+
+			add_one(value);
+			add_one(current_code);
+
+		}
+		value[1] = std::byte { 0x90 } ;
+		max_val[1] = std::byte { 0x97 + 1 };
+	}
+
+
 	void proofMagicNumbers() { 
 		if (current_chunk[0] != MN1 or current_chunk[1] != MN2 or current_chunk[2] != std::byte { 0x08 }) {
 			throw std::invalid_argument("Magic numbers do not equal those specified in the gzip standard");
@@ -69,19 +138,18 @@ class Decompressor {
 	void decodeZeroType() {
 		first_leftover_size = 0;
 		first_leftover = std::byte{ 0 };
-
 		int datalen { 0 };
 
 		readInputStream(current_chunk, 4);
-
 		for (short i = 0; i < 2; i++) {
 			datalen += std::to_integer<int>(current_chunk[i]) * pow(256, i);
 		}
-
 		readInputStream(chunk_to_write, datalen);
+
+
 	}
 
-	void decodeFirstType() {
+	void decodeFirstType() {	
 	}
 
 	void decodeSecondType() {
@@ -93,9 +161,13 @@ class Decompressor {
 // ----------------- public methods ----------------
 
 		Decompressor(std::string& read_file_name, std::string& write_file_name){
+			
+
+
 			current_chunk.reserve(500);
 			stream_read.open(read_file_name, std::ios::binary);
 			stream_write.open(write_file_name, std::ios::binary | std::ios::trunc);
+			generate_static_huffman();
 
 			if (!stream_read.is_open()) {
 				throw std::invalid_argument("Check the filename");
@@ -161,6 +233,35 @@ class Decompressor {
 			stream_read.close();
 			stream_write.close();
 		}
+
+
+	void add_one(TwoBytes &value, bool byte_number = 1) {
+		TwoBytes carry;
+		carry[byte_number] = std::byte { 0x01 };
+		TwoBytes swap;
+
+		while (carry[byte_number] != std::byte { 0 }) {
+			swap[byte_number] = value[byte_number];
+			value[byte_number] ^= carry[byte_number];	
+			carry[byte_number] &= swap[byte_number];
+			if ( carry[byte_number] != std::byte { 0x80 }){
+				carry[1] <<= 1;
+			}
+			else {
+				break;
+			}
+		}
+
+		if (carry[byte_number] == std::byte {0x80}) {
+			if (byte_number) {
+				add_one(value, 0);
+			}
+
+			else {
+				throw std::runtime_error ("Code length is invalid");
+			}
+		}
+	}
 };
 
 // ---------------- main ----------------- 
