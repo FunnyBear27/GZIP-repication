@@ -65,7 +65,7 @@ class Decompressor {
 // ----------------- private methods ----------------
 
 	void readInputStream(std::vector<std::byte>& vect_to_read, const unsigned long chunk_size) {
-			
+		
 		vect_to_read.clear();
 
 		unsigned long i = 0;
@@ -91,65 +91,29 @@ class Decompressor {
 	}
 
 
-	void add_one_iterator(TwoBytes& current_code, TwoBytes& value, TwoBytes& max_val) {
-		while (!(value == max_val)) {
+	void generate_static_huffman() { // RFC 1951 DEFLATE specs - 3.2.6
+		TwoBytes value;
+		value[0] = std::byte { 0 };
+		value[1] = std::byte{ 0 };
+
+		TwoBytes current_code;
+		current_code[0] = std::byte { 0 };
+		current_code[1] = std::byte { 0x30 };
+
+		TwoBytes max_val;
+		max_val[0] = std::byte { 0 };
+		max_val[1] = std::byte { 0x8f + 1 } ;
+
+		while (value[1] != max_val[1]) {
 			first_type_llc[current_code] = value;
 
 			add_one(value);
 			add_one(current_code);
+
 		}
-
-	}
-
-
-	void generate_static_huffman() { // RFC 1951 DEFLATE specs - 3.2.6
-
-		// Generate LLCs 0 - 143
-
-		TwoBytes current_code;
-		TwoBytes max_val;
-		TwoBytes value;
-
-		value[0] = std::byte { 0 };
-		value[1] = std::byte{ 0 };
-
-		current_code[0] = std::byte { 0 };
-		current_code[1] = std::byte { 0x30 };
+		value[1] = std::byte { 0x90 } ;
+		max_val[1] = std::byte { 0xff };
 		
-		max_val[0] = std::byte { 0 };
-		max_val[1] = std::byte { 0x8f + 1 } ;
-
-		add_one_iterator(current_code, value , max_val);
-
-		// 144 - 255
-
-		current_code[0] = std::byte { 0x01 };
-		current_code[1] = std::byte { 0x90 };
-
-		max_val[0] = std::byte { 0x01 };
-		max_val[1] = std::byte { 0x00 };
-
-		add_one_iterator(current_code, value , max_val);
-		
-		// 256 - 279
-
-		current_code[0] = std::byte { 0x00 };
-		current_code[1] = std::byte { 0x00 };
-
-		max_val[0] = std::byte { 0x01 };
-		max_val[1] = std::byte { 0x18 };
-
-		add_one_iterator(current_code, value , max_val);
-
-		// 280 - 287
-
-		current_code[0] = std::byte { 0x00 };
-		current_code[1] = std::byte { 0xc0 };
-
-		max_val[0] = std::byte { 0x01 };
-		max_val[1] = std::byte { 0x20 };
-
-		add_one_iterator(current_code, value , max_val);
 	}
 
 
