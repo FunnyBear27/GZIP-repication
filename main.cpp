@@ -150,6 +150,7 @@ class Decompressor {
 		max_val[1] = std::byte { 0x20 };
 
 		add_one_iterator(current_code, value , max_val);
+		std::cout << first_type_llc.size() << std::endl;
 	}
 
 
