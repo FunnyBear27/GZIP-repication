@@ -1,1 +1,4 @@
 bin
+*.o
+first_part_of_T1_llc_unordered_map.txt
+output.txt
